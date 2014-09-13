@@ -1,0 +1,135 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "David Laird"
+date: "Thursday, September 11, 2014"
+output:
+  html_document:
+    keep_md: yes
+    theme: cerulean
+---
+
+## Introduction
+This analysis is performed as part of the requirements of the Practical Machine Learning course of the Coursera/Johns Hopkins University Data Science Specialization.  A data set is provided containing observations on body movement taken from a subject while doing exercise, along with a 5-level categorical determination of how correctly the exercise was done.  This objective of this exercise is to create an accurate predictive model which can be applied to 20 individual test cases which will be submitted for grading separately.  More information about the study originating the data can be found at:
+
+*http://groupware.les.inf.puc-rio.br/har*
+
+## Loading Training Data 
+The training data set provided by the assignment is loaded.  It is determined to have a relatively large number of observations (19,622) and enough to subdivide into a training set to use for model fitting and a validation set to test the model fit and estimate the out-of-sample error rate before applying the model to the 20 test cases that will be submitted for grading.  Since the available data set is significantly larger than those used in lecture examples, a slightly larger proportion will be used for training with some assurance that the remaining set will be large enough to provide reasonable validation.  Specifically, 80% of the data will be used for training and 20% for validation.  For replicability, the random generator seed is set before splitting the data.
+``` {r "Loading Training Data"}
+library(caret)
+d = read.csv("pml-training.csv")
+set.seed(12345)
+inTrain = createDataPartition(y=d$classe,
+                              p=0.8,
+                              list=FALSE)
+dt = d[inTrain,]
+dv = d[-inTrain,]
+```
+
+``` {r "creating temporary small data sets",echo=FALSE}
+# start temp block
+# temporary small datasets for code checking
+# tempTrainObs = 2000
+# tempValObs = 500
+# tempTrain = sample(1:dim(dt)[1],tempTrainObs);dt = dt[tempTrain,]
+# tempVal   = sample(1:dim(dv)[1],tempValObs);  dv = dv[tempVal,]
+# dim(dt);dim(dv)
+# table(dt$classe)
+# table(dv$classe)
+```
+## Exploratory Data Analysis
+The training set is explored using the `str()`, `head()` and `summary()` functions and is found to contain the response column (_classe_) plus 159 predictor columns made up of a combination of numerical variables and factor variables.  The response takes on one of five categorical values (A through E).  The predictor variables are assumed to be mainly measurements of motion during activity, but their precise definitions and metric units are not known nor were they found on any data dictionary at the source website provided.
+
+## Preprocessing
+The large number of explanatory variables will be reduced using principal component analysis (PCA), but since factor variables cannot be used in PCA, the training set is divided into two sets, one containing factor data and one containing numerical data.  The following code creates a factor data set with 37 columns and a numerical data set with 123 numerical columns.  
+``` {r "Separating Factors from Non-Factors"}
+fctrs = c()
+for (i in 1:dim(dt)[2]) {
+  if (is.factor(dt[,i])){fctrs = c(fctrs,i)}
+}
+dtf = dt[,fctrs]
+dtnf = dt[,-fctrs]
+```
+
+**Factor Column Processing:** The factor columns on the training data set are looked at individually by applying the `table()` command to each variable.  This process reveals that for almost all factor columns only a small fraction of observations have interpretable values (about 324 out of 15,699 observations), and that no factor columns are populated for most of the observations.  It is decided to exclude all factor columns from further analysis. 
+
+**Numerical Column Processing:** Preprocessing on numerical columns has the objective of reducing the large number of explanatory variables to a smaller number while retaining a large degree of predictive information contained in the entire data.  The column reduction will be done by means of PCA which does not allow for missing values, so the first step in preprocessing is to replace missing values with imputed values using the `medianImpute` method.  The result is a new data set with only numerical columns and no missing values.
+``` {r "Imputing Missing Values in Training Set"}
+dtnfPre = preProcess(dtnf,
+                     method = "medianImpute")
+dtnfi = predict(dtnfPre,
+                newdata=dtnf)
+```
+
+The nature of the data is not well understood by the author but as a precaution all columns are normalized by centering and scaling.  This produces a new data set with scaled columns. 
+``` {r "Centering and Scaling Training Data"}
+dtnfPre = preProcess(dtnfi,
+                     method = c("center","scale"))
+dtnfic = predict(dtnfPre,
+                 newdata = dtnfi)
+```
+Finally, PCA is applied to reduce the columns to a more computationally manageable number.  The PCA caret::preProcess object created in this step will be applied to the validation data to similarly transform the columns on that data set into a form that can be consumed by the model fit to the training data. 
+``` {r "Calculating the Principal Components"}
+dtnfPre = preProcess(dtnfic,
+                     method = "pca",
+                     thresh = .95)
+dtnficp = predict(dtnfPre,
+                  dtnfic)
+dim(dtnficp)
+```
+At this point the numerical explanatory columns are reduced from 123 to `r dim(dtnficp)[2]` while retaining 95% of the variability contained in the whole data set.  The result is the final training data set that will be used for model fitting in the next step.
+
+## Model Building
+A random forest method is used to estimate a predictive model based on this training data.  Random Forest was selected because it is known to produce good results with this type of classification prediction and because of the many models available it is the one that is best understood by the author.  The model is fit with _classe_ as the response variable and all of the principal components calculated above as predictors.
+```{r "MOdel Fitting and Training Set Results"}
+rfFit = train(dt$classe ~ .,
+              data = dtnficp,
+              method = "rf")
+```
+
+**Cross Validation:** Cross-validation is performed by the caret::train function using the default settings for the "rf" (random forest) model.  This results in standard bootstrapping with replacement using 25 resamples. 
+
+**Predicted Values:** Once the model is fit it is run on the training data and the predicted values are compared to the actual training set response variable.  Unsurprisingly, the fit is very good.  (Note:  In fact, the fit is perfect.  What is surprising to the author, however, is that preliminary analyses with much less exact estimation of principal components (`pcaComp = 2`) also yielded perfect fits on the training data.  As expected, these versions did significantly worse in their out-of-sample error rate.) 
+```{r "Results and In-Sample Error Rate"}
+predTrain = predict(rfFit,
+                    dtnficp)
+confusionMatrix(predTrain,dt$classe)
+```
+
+## Validation Data Pre-Processing
+The model fit on training data is applied to validation data to estimate an out-of-sample error rate.  First, the validation data is pre-processed in the same way that the training data was pre-processed. Numerical columns are separated from factor columns, missing values are imputed, and each column is centered and scaled.
+``` {r "Validation Set Preprocessing"}
+# isolate the non-factor columns
+dvnf = dv[,-fctrs]
+# impute the medians for missing values
+dvnfPre = preProcess(dvnf,
+                     method = "medianImpute")
+dvnfi = predict(dvnfPre,
+                newdata=dvnf)
+# center and scale
+dvnfPre = preProcess(dvnfi,
+                     method = c("center","scale"))
+dvnfic = predict(dvnfPre,
+                 newdata = dvnfi)
+```
+The pre-processed data is applied to the PCA caret::preProcess object created using training data to estimate principal components for the validation data set.
+``` {r "Validation Dataset Principal Component Calculation"}
+dvnficp = predict(dtnfPre,
+                  dvnfic)
+```
+
+## Estimating the Out-of-Sample Error Rate
+The preprocessed validation data is applied to the model to generate predictions.
+``` {r "predicting values on validation data"}
+predVal = predict(rfFit,
+                  dvnficp)
+```
+The predicted values are compared to the actual validation response variable, and an out-of-sample error rate is determined.  
+``` {r "calculating out-of-sample error rate"}
+vcm = confusionMatrix(predVal,dv$classe)
+vcm
+```
+As shown above table, the out-of-sample error rate is `r round(vcm$overall[1]*100,1)` %.
+
+## Conclusion
+Based on the above results, I expect that out of the 20 test cases to submit for this class project, I will get `r round(vcm$overall[1]*20,0)` right.
