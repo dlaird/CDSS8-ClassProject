@@ -85,7 +85,7 @@ dv = d[-inTrain,]</code></pre>
 <h2>Preprocessing</h2>
 <p>The large number of explanatory variables will be reduced using principal component analysis (PCA), but since factor variables cannot be used in PCA, the training set is divided into two sets, one containing factor data and one containing numerical data. The following code creates a factor data set with 37 columns and a numerical data set with 123 numerical columns.</p>
 <pre class="r"><code>fctrs = c()
-j = for (i in 1:dim(dt)[2]) {
+for (i in 1:dim(dt)[2]) {
   if (is.factor(dt[,i])){fctrs = c(fctrs,i)}
 }
 dtf = dt[,fctrs]

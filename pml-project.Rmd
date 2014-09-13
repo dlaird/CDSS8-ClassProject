@@ -29,8 +29,8 @@ dv = d[-inTrain,]
 ``` {r "creating temporary small data sets",echo=FALSE}
 # start temp block
 # temporary small datasets for code checking
-# tempTrainObs = 2000
-# tempValObs = 500
+# tempTrainObs = 1000
+# tempValObs = 250
 # tempTrain = sample(1:dim(dt)[1],tempTrainObs);dt = dt[tempTrain,]
 # tempVal   = sample(1:dim(dv)[1],tempValObs);  dv = dv[tempVal,]
 # dim(dt);dim(dv)
