@@ -54,86 +54,105 @@ if (window.hljs && document.readyState && document.readyState === "complete") {
 <div id="header">
 <h1 class="title">Practical Machine Learning - Course Project</h1>
 <h4 class="author"><em>David Laird</em></h4>
-<h4 class="date"><em>Thursday, September 11, 2014</em></h4>
+<h4 class="date"><em>Saturday, September 20, 2014</em></h4>
 </div>
 
 
 <div id="introduction" class="section level2">
 <h2>Introduction</h2>
-<p>This analysis is performed as part of the requirements of the Practical Machine Learning course of the Coursera/Johns Hopkins University Data Science Specialization. A data set is provided containing observations on body movement taken from a subject while doing exercise, along with a 5-level categorical determination of how correctly the exercise was done. This objective of this exercise is to create an accurate predictive model which can be applied to 20 individual test cases which will be submitted for grading separately. More information about the study originating the data can be found at:</p>
+<p>This analysis is performed as part of the requirements of the Practical Machine Learning course of the Coursera/Johns Hopkins University Data Science Specialization. A data set is provided containing observations on body movement taken from subjects while doing exercise, along with a 5-level categorical determination of how correctly the exercise was done. This objective of this exercise is to create an accurate predictive model which can be applied to 20 individual test cases which will be submitted for grading separately. More information about the study originating the data can be found at:</p>
 <p><em><a href="http://groupware.les.inf.puc-rio.br/har">http://groupware.les.inf.puc-rio.br/har</a></em></p>
 </div>
-<div id="loading-training-data" class="section level2">
-<h2>Loading Training Data</h2>
-<p>The training data set provided by the assignment is loaded. It is determined to have a relatively large number of observations (19,622) and enough to subdivide into a training set to use for model fitting and a validation set to test the model fit and estimate the out-of-sample error rate before applying the model to the 20 test cases that will be submitted for grading. Since the available data set is significantly larger than those used in lecture examples, a slightly larger proportion will be used for training with some assurance that the remaining set will be large enough to provide reasonable validation. Specifically, 80% of the data will be used for training and 20% for validation. For replicability, the random generator seed is set before splitting the data.</p>
+<div id="loading-data" class="section level2">
+<h2>Loading Data</h2>
+<p>The training data set and the quiz data set provided by the assignment are loaded. All model fitting analysis will be performed on the training data, but the quiz data will be used to help in column selection to make sure that the model is built only on variables that are available for making predictions.</p>
 <pre class="r"><code>library(caret)</code></pre>
 <pre><code>## Loading required package: lattice
 ## Loading required package: ggplot2</code></pre>
 <pre class="r"><code>d = read.csv(&quot;pml-training.csv&quot;)
-set.seed(12345)
-inTrain = createDataPartition(y=d$classe,
-                              p=0.8,
-                              list=FALSE)
-dt = d[inTrain,]
-dv = d[-inTrain,]</code></pre>
+qz = read.csv(&quot;pml-testing.csv&quot;)</code></pre>
 </div>
 <div id="exploratory-data-analysis" class="section level2">
 <h2>Exploratory Data Analysis</h2>
-<p>The training set is explored using the <code>str()</code>, <code>head()</code> and <code>summary()</code> functions and is found to contain the response column (<em>classe</em>) plus 159 predictor columns made up of a combination of numerical variables and factor variables. The response takes on one of five categorical values (A through E). The predictor variables are assumed to be mainly measurements of motion during activity, but their precise definitions and metric units are not known nor were they found on any data dictionary at the source website provided.</p>
+<p>The training set is explored using the <code>str()</code>, <code>head()</code> and <code>summary()</code> functions and is found to contain the response column (<em>classe</em>) plus 159 predictor columns made up of a combination of numerical variables and factor variables. The response takes on one of five categorical values (A through E). The predictor variables are assumed to be mainly measurements of motion during activity, but their precise definitions and metric units are not known nor were they found on any data dictionary at the source website provided. The quiz set has the same structure except that the response variable is replaced with a problem identifier.</p>
+</div>
+<div id="column-and-row-selection" class="section level2">
+<h2>Column and Row Selection</h2>
+<p><strong>Column Selection:</strong> The quiz data is inspected visually and many columns are found to contain no predictive information. One column contain all “no”s and rest contain only NAs. Since the model will not be able to use these columns for making predictions, they will be removed from the training data set. The following step allows for confirmation that the identified columns do not contain useful data, and then reduces the number of explanatory columns in the training set from 159 to 58.</p>
+<pre class="r"><code>emptyColumns = c(6,12:36,50:59,69:83,87:101,103:112,125:139,141:150)
+# the next line simply serves as a check that all removed columns contain no useful information
+qzRemove = qz[emptyColumns] 
+d = d[,-emptyColumns]</code></pre>
+<p>Some of the remaining columns contain factor variables, and since factor variables cannot be used in principal component analysis, they will also be removed, with the exception of the response variable <em>classe</em>. The response variable is the last column in the set, which is why the for loop subtracts one from the dimension of the dataset.</p>
+<pre class="r"><code>fctrs = c()
+for (i in 1:dim(d)[2]-1) {
+  if (is.factor(d[,i])){fctrs = c(fctrs,i)}
+}
+d = d[,-fctrs]</code></pre>
+<p>The last step in column selection is to remove columns that contain noise. Specifically the first column, which is just a row count variable, is strongly correlated in the original dataset with the response variable since the data is presented sorted by response. Two time-stamp columns will also be removed since any influence they will only add noise to the model selection.</p>
+<pre class="r"><code>noise = c(1,2,3)
+d = d[,-noise]</code></pre>
+<p><strong>Row Selection:</strong> The training set consists of 19,622 observation. This is considered enough to subdivide into a training set to use for model fitting and a validation set to test the model fit and to estimate the out-of-sample error rate. In addition, three other test sets of only 22 observations each are created to replicate the quiz data set size to get additional estimates of quiz performance. Since the available data set is significantly larger than those used in lecture examples, a slightly larger proportion will be used for training with some assurance that the remaining set will be large enough to provide reasonable validation. Specifically, 80% of the data will be used for training and 20% for validation.</p>
+<pre class="r"><code>inTst1 = createDataPartition(y=d$classe, p=0.001019264, list=FALSE)
+dtst1 = d[inTst1,]
+d = d[-inTst1,]
+inTst2 = createDataPartition(y=d$classe, p=0.001019264, list=FALSE)
+dtst2 = d[inTst2,]
+d = d[-inTst2,]
+inTst3 = createDataPartition(y=d$classe, p=0.001019264, list=FALSE)
+dtst3 = d[inTst3,]
+d = d[-inTst3,]
+inTrn = createDataPartition(y=d$classe, p=0.8, list=FALSE)
+dtrn = d[inTrn,]
+dval = d[-inTrn,]</code></pre>
 </div>
 <div id="preprocessing" class="section level2">
 <h2>Preprocessing</h2>
-<p>The large number of explanatory variables will be reduced using principal component analysis (PCA), but since factor variables cannot be used in PCA, the training set is divided into two sets, one containing factor data and one containing numerical data. The following code creates a factor data set with 37 columns and a numerical data set with 123 numerical columns.</p>
-<pre class="r"><code>fctrs = c()
-for (i in 1:dim(dt)[2]) {
-  if (is.factor(dt[,i])){fctrs = c(fctrs,i)}
-}
-dtf = dt[,fctrs]
-dtnf = dt[,-fctrs]</code></pre>
-<p><strong>Factor Column Processing:</strong> The factor columns on the training data set are looked at individually by applying the <code>table()</code> command to each variable. This process reveals that for almost all factor columns only a small fraction of observations have interpretable values (about 324 out of 15,699 observations), and that no factor columns are populated for most of the observations. It is decided to exclude all factor columns from further analysis.</p>
-<p><strong>Numerical Column Processing:</strong> Preprocessing on numerical columns has the objective of reducing the large number of explanatory variables to a smaller number while retaining a large degree of predictive information contained in the entire data. The column reduction will be done by means of PCA which does not allow for missing values, so the first step in preprocessing is to replace missing values with imputed values using the <code>medianImpute</code> method. The result is a new data set with only numerical columns and no missing values.</p>
-<pre class="r"><code>dtnfPre = preProcess(dtnf,
+<p>Preprocessing with principal component analysis (PCA) has the objective of reducing the large number of explanatory variables to a smaller number while retaining a large degree of predictive information contained in the entire data. The result is a new data set with only numerical columns and no missing values.</p>
+<p>The first step is to remove the response factor variable from the explanatory variables for easier preprocessing of the latter.</p>
+<pre class="r"><code>dtrnResponse = dtrn[54]
+dtrn = dtrn[-54]</code></pre>
+<p>Since PCA which does not allow for missing values, the next step in preprocessing is to replace missing values with imputed values using the <code>medianImpute</code> method.</p>
+<pre class="r"><code>dtrnPre = preProcess(dtrn,
                      method = &quot;medianImpute&quot;)
-dtnfi = predict(dtnfPre,
-                newdata=dtnf)</code></pre>
+dtrni = predict(dtrnPre,
+                newdata=dtrn)</code></pre>
 <p>The nature of the data is not well understood by the author but as a precaution all columns are normalized by centering and scaling. This produces a new data set with scaled columns.</p>
-<pre class="r"><code>dtnfPre = preProcess(dtnfi,
+<pre class="r"><code>dtrnPre = preProcess(dtrni,
                      method = c(&quot;center&quot;,&quot;scale&quot;))
-dtnfic = predict(dtnfPre,
-                 newdata = dtnfi)</code></pre>
+dtrnic = predict(dtrnPre,
+                 newdata = dtrni)</code></pre>
 <p>Finally, PCA is applied to reduce the columns to a more computationally manageable number. The PCA caret::preProcess object created in this step will be applied to the validation data to similarly transform the columns on that data set into a form that can be consumed by the model fit to the training data.</p>
-<pre class="r"><code>dtnfPre = preProcess(dtnfic,
+<pre class="r"><code>dtrnPre = preProcess(dtrnic,
                      method = &quot;pca&quot;,
                      thresh = .95)
-dtnficp = predict(dtnfPre,
-                  dtnfic)
-dim(dtnficp)</code></pre>
-<pre><code>## [1] 15699    49</code></pre>
-<p>At this point the numerical explanatory columns are reduced from 123 to 49 while retaining 95% of the variability contained in the whole data set. The result is the final training data set that will be used for model fitting in the next step.</p>
+dtrnicp = predict(dtrnPre,
+                  dtrnic)</code></pre>
+<p>At this point the numerical explanatory columns are reduced from 54 to 25 while retaining 95% of the variability contained in the whole data set. The result is the final training data set that will be used for model fitting in the next step.</p>
 </div>
 <div id="model-building" class="section level2">
 <h2>Model Building</h2>
-<p>A random forest method is used to estimate a predictive model based on this training data. Random Forest was selected because it is known to produce good results with this type of classification prediction and because of the many models available it is the one that is best understood by the author. The model is fit with <em>classe</em> as the response variable and all of the principal components calculated above as predictors.</p>
-<pre class="r"><code>rfFit = train(dt$classe ~ .,
-              data = dtnficp,
+<p>A random forest method is used to estimate a predictive model based on the given and preprocessed training data. Random Forest was selected because it is known to produce good results with this type of classification prediction and because of the many models available it is the one that is best understood by the author. The model is fit with <em>classe</em> as the response variable and all of the principal components calculated above as predictors.</p>
+<pre class="r"><code>rfFit = train(dtrnResponse$classe ~ .,
+              data = dtrnicp,
               method = &quot;rf&quot;)</code></pre>
 <pre><code>## Loading required package: randomForest
 ## randomForest 4.6-10
 ## Type rfNews() to see new features/changes/bug fixes.</code></pre>
 <p><strong>Cross Validation:</strong> Cross-validation is performed by the caret::train function using the default settings for the “rf” (random forest) model. This results in standard bootstrapping with replacement using 25 resamples.</p>
 <p><strong>Predicted Values:</strong> Once the model is fit it is run on the training data and the predicted values are compared to the actual training set response variable. Unsurprisingly, the fit is very good. (Note: In fact, the fit is perfect. What is surprising to the author, however, is that preliminary analyses with much less exact estimation of principal components (<code>pcaComp = 2</code>) also yielded perfect fits on the training data. As expected, these versions did significantly worse in their out-of-sample error rate.)</p>
-<pre class="r"><code>predTrain = predict(rfFit,
-                    dtnficp)
-confusionMatrix(predTrain,dt$classe)</code></pre>
+<pre class="r"><code>predTrn = predict(rfFit,
+                  dtrnicp)
+confusionMatrix(predTrn,dtrnResponse$classe)</code></pre>
 <pre><code>## Confusion Matrix and Statistics
 ## 
 ##           Reference
 ## Prediction    A    B    C    D    E
-##          A 4464    0    0    0    0
-##          B    0 3038    0    0    0
-##          C    0    0 2738    0    0
-##          D    0    0    0 2573    0
-##          E    0    0    0    0 2886
+##          A 4450    0    0    0    0
+##          B    0 3028    0    0    0
+##          C    0    0 2728    0    0
+##          D    0    0    0 2564    0
+##          E    0    0    0    0 2876
 ## 
 ## Overall Statistics
 ##                                 
@@ -157,69 +176,84 @@ confusionMatrix(predTrain,dt$classe)</code></pre>
 ## Detection Prevalence    0.284    0.194    0.174    0.164    0.184
 ## Balanced Accuracy       1.000    1.000    1.000    1.000    1.000</code></pre>
 </div>
-<div id="validation-data-pre-processing" class="section level2">
-<h2>Validation Data Pre-Processing</h2>
-<p>The model fit on training data is applied to validation data to estimate an out-of-sample error rate. First, the validation data is pre-processed in the same way that the training data was pre-processed. Numerical columns are separated from factor columns, missing values are imputed, and each column is centered and scaled.</p>
-<pre class="r"><code># isolate the non-factor columns
-dvnf = dv[,-fctrs]
-# impute the medians for missing values
-dvnfPre = preProcess(dvnf,
-                     method = &quot;medianImpute&quot;)
-dvnfi = predict(dvnfPre,
-                newdata=dvnf)
-# center and scale
-dvnfPre = preProcess(dvnfi,
+<div id="validation-and-test-sample-processing" class="section level2">
+<h2>Validation and Test Sample Processing</h2>
+<p>The model fit on training data is applied to validation data to estimate an out-of-sample error rate. First, the validation data is pre-processed in the same way that the training data was pre-processed. The response variable is separated, missing values are imputed, and each column is centered and scaled. The pre-processed data is applied to the PCA caret::preProcess object created using training data to estimate principal components for the validation data set. Since this procedure will also be applied to the three quiz-size samples, a function is written for processing all validations test sets. The function is written with the option of outputting the actual predictions or the confusion matrix.</p>
+<pre class="r"><code>predictionFunction = function(dataName,out=&quot;cm&quot;){
+  response = dataName[54]
+  predictors = dataName[-54]
+  ppObj = preProcess(predictors,
+                     method=&quot;medianImpute&quot;)
+  predictorsImputed = predict(ppObj,
+                              newdata=predictors)
+  ppObj = preProcess(predictorsImputed,
                      method = c(&quot;center&quot;,&quot;scale&quot;))
-dvnfic = predict(dvnfPre,
-                 newdata = dvnfi)</code></pre>
-<p>The pre-processed data is applied to the PCA caret::preProcess object created using training data to estimate principal components for the validation data set.</p>
-<pre class="r"><code>dvnficp = predict(dtnfPre,
-                  dvnfic)</code></pre>
-</div>
-<div id="estimating-the-out-of-sample-error-rate" class="section level2">
-<h2>Estimating the Out-of-Sample Error Rate</h2>
-<p>The preprocessed validation data is applied to the model to generate predictions.</p>
-<pre class="r"><code>predVal = predict(rfFit,
-                  dvnficp)</code></pre>
-<p>The predicted values are compared to the actual validation response variable, and an out-of-sample error rate is determined.</p>
-<pre class="r"><code>vcm = confusionMatrix(predVal,dv$classe)
-vcm</code></pre>
+  predictorsImputedScaled = predict(ppObj,
+                                   newdata = predictorsImputed)
+  predictorsPCA = predict(dtrnPre,
+                          predictorsImputedScaled)
+  predictions = predict(rfFit,
+                        newdata = predictorsPCA)
+  if (out==&quot;predictions&quot;){
+    predictions
+  }
+  else {
+    confusionMatrix(predictions,response[,1])
+  }
+}</code></pre>
+<p>The function is then run on each of the test samples, the large validation set and each of the three quiz-size test sets.</p>
+<pre class="r"><code>cmval  = predictionFunction(dval)
+cmtst1 = predictionFunction(dtst1)
+cmtst2 = predictionFunction(dtst2)
+cmtst3 = predictionFunction(dtst3)
+cmval</code></pre>
 <pre><code>## Confusion Matrix and Statistics
 ## 
 ##           Reference
 ## Prediction    A    B    C    D    E
-##          A 1107    5    1    2    0
-##          B    8  746   10    1    3
-##          C    1    5  667   16    1
-##          D    0    0    4  620    0
-##          E    0    3    2    4  717
+##          A 1100    8    0    2    2
+##          B    6  745    8    2    0
+##          C    2    3  665   27    4
+##          D    1    0    8  609    3
+##          E    3    1    1    0  710
 ## 
 ## Overall Statistics
 ##                                         
-##                Accuracy : 0.983         
-##                  95% CI : (0.979, 0.987)
+##                Accuracy : 0.979         
+##                  95% CI : (0.974, 0.984)
 ##     No Information Rate : 0.284         
 ##     P-Value [Acc &gt; NIR] : &lt;2e-16        
 ##                                         
-##                   Kappa : 0.979         
-##  Mcnemar's Test P-Value : NA            
+##                   Kappa : 0.974         
+##  Mcnemar's Test P-Value : 0.01          
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity             0.992    0.983    0.975    0.964    0.994
-## Specificity             0.997    0.993    0.993    0.999    0.997
-## Pos Pred Value          0.993    0.971    0.967    0.994    0.988
-## Neg Pred Value          0.997    0.996    0.995    0.993    0.999
-## Prevalence              0.284    0.193    0.174    0.164    0.184
-## Detection Rate          0.282    0.190    0.170    0.158    0.183
-## Detection Prevalence    0.284    0.196    0.176    0.159    0.185
-## Balanced Accuracy       0.995    0.988    0.984    0.982    0.996</code></pre>
-<p>As shown above table, the out-of-sample error rate is 98.3 %.</p>
+## Sensitivity             0.989    0.984    0.975    0.952    0.987
+## Specificity             0.996    0.995    0.989    0.996    0.998
+## Pos Pred Value          0.989    0.979    0.949    0.981    0.993
+## Neg Pred Value          0.996    0.996    0.995    0.991    0.997
+## Prevalence              0.284    0.194    0.174    0.164    0.184
+## Detection Rate          0.281    0.191    0.170    0.156    0.182
+## Detection Prevalence    0.284    0.195    0.179    0.159    0.183
+## Balanced Accuracy       0.992    0.990    0.982    0.974    0.993</code></pre>
+<pre class="r"><code>cmtst1er = cmtst1$overall[1]
+cmtst2er = cmtst2$overall[1]
+cmtst3er = cmtst3$overall[1]</code></pre>
+</div>
+<div id="estimating-the-out-of-sample-error-rate" class="section level2">
+<h2>Estimating the Out-of-Sample Error Rate</h2>
+<p>The predicted values are compared to the actual validation response variable, and an out-of-sample error rate is determined.<br />As shown above table, the out-of-sample error rate is:</p>
+<p>Validation Results: 97.9 %.</p>
+<p>The three error rates for the quiz-size samples are:</p>
+<p>Test 1: 86.4%</p>
+<p>Test 2: 95.5%</p>
+<p>Test 3: 100%</p>
 </div>
 <div id="conclusion" class="section level2">
 <h2>Conclusion</h2>
-<p>Based on the above results, I expect that out of the 20 test cases to submit for this class project, I will get 20 right.</p>
+<p>Based on the above results, I expect that out of the 20 test cases to submit for this class project, I will get about 19 right.</p>
 </div>
 
 
